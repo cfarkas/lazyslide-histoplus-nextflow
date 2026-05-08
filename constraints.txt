@@ -1,0 +1,28 @@
+# Resolver guardrails. These lower bounds keep pip from exploring old package
+# versions and avoid the numpy<2 path that caused the Docker build failure.
+numpy>=2.0.0
+pandas>=2.2.3
+scipy>=1.15.1
+scikit-image>=0.24.0
+scikit-learn>=1.6.1
+matplotlib>=3.9.0
+matplotlib-scalebar>=0.9.0
+seaborn>=0.13.2
+shapely>=2.0.7
+geopandas>=1.0.1
+pyarrow>=17.0.0
+xarray>=2024.10.0
+spatialdata>=0.7.0
+anndata>=0.11.4
+wsidata>=0.9.0
+timm>=1.0.8
+transformers>=4.49.0
+huggingface-hub>=1.1.5
+hf-xet>=1.1.5
+tifffile>=2024.12.12
+imagecodecs>=2024.12.30
+opencv-python-headless>=4.10.0.84
+psutil>=5.9.0
+rich>=13.0.0
+cyclopts>=3.0.0
+legendkit>=0.3.4

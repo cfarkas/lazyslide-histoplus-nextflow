@@ -1,0 +1,23 @@
+# Additional runtime dependencies for the LazySlide/HistoPLUS Docker image.
+#
+# Dockerfile installs these first:
+#   1. PyTorch/torchvision from the CPU or CUDA wheel index
+#   2. lazyslide-models from GitHub
+#   3. lazyslide==0.10.1 from PyPI
+#
+# Do not add the legacy PyPI package "instanseg" here; it conflicts with the
+# numpy>=2 dependency path used by current LazySlide/lazyslide-models.
+# Do not add git+https://github.com/owkin/histoplus.git here; LazySlide's
+# HistoPLUS wrapper is supplied by lazyslide-models and downloads weights at
+# runtime through Hugging Face.
+
+huggingface_hub[hf_xet]>=1.1.5
+openslide-python>=1.4.0
+openslide-bin>=4.0.0.8
+tiffslide>=2.5.1
+tifffile>=2024.12.12
+imagecodecs>=2024.12.30
+opencv-python-headless>=4.10.0.84
+pyvips>=3.0.0
+pyyaml>=6.0.2
+tqdm>=4.67.1

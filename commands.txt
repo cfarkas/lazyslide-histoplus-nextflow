@@ -1,0 +1,289 @@
+################################################################################
+# LazySlide HistoPLUS Nextflow command playbook
+# Clean version: no hard-coded tokens, fixed Docker dependency build, safe reruns
+################################################################################
+
+################################################################################
+# 1. Configure Hugging Face token safely
+################################################################################
+
+# Create this file and paste only the token text inside it.
+# Do not put the token in Git, notes, screenshots, or shell history.
+mkdir -p ~/.config/lazyslide-histoplus
+nano ~/.config/lazyslide-histoplus/hf_token
+chmod 600 ~/.config/lazyslide-histoplus/hf_token
+
+# Load the token for the current shell.
+export HF_TOKEN="$(tr -d '\r\n' < ~/.config/lazyslide-histoplus/hf_token)"
+export HF_HOME="$HOME/.cache/lazyslide-histoplus/hf"
+export HUGGINGFACE_HUB_CACHE="$HF_HOME/hub"
+mkdir -p "$HF_HOME" "$HUGGINGFACE_HUB_CACHE"
+
+# Optional: verify the token identity.
+python - <<'PY'
+import os
+from huggingface_hub import whoami
+
+token = os.environ.get("HF_TOKEN")
+if not token:
+    raise SystemExit("HF_TOKEN is not set")
+
+info = whoami(token=token)
+print("Authenticated Hugging Face user:", info.get("name"))
+PY
+
+# Optional: verify access to the gated HistoPLUS weight.
+python - <<'PY'
+import os
+from huggingface_hub import hf_hub_download
+
+token = os.environ.get("HF_TOKEN")
+if not token:
+    raise SystemExit("HF_TOKEN is not set")
+
+path = hf_hub_download(
+    repo_id="Owkin-Bioptimus/histoplus",
+    filename="histoplus_cellvit_segmentor_20x.pt",
+    token=token,
+)
+print("HistoPLUS weight downloaded/cached at:")
+print(path)
+PY
+
+################################################################################
+# 2. Unpack the clean repository
+################################################################################
+
+cd /media/server/STORAGE/Motic_AnatomiaPatológica_2025
+unzip -o lazyslide-histoplus-nextflow.zip
+cd lazyslide-histoplus-nextflow
+chmod +x *.sh lazyslide_histoplus_wsi_celltype.py
+
+# Clean generated Python cache before committing to GitHub.
+find . -type d -name '__pycache__' -prune -exec rm -rf {} +
+
+./setup_server.sh --help
+./run.sh --help
+./setup_server.sh --check-only
+
+################################################################################
+# 3. Install/check Docker, Nextflow, and optional GitHub CLI
+################################################################################
+
+cd /media/server/STORAGE/Motic_AnatomiaPatológica_2025/lazyslide-histoplus-nextflow
+
+./setup_server.sh \
+  --install \
+  --flavor auto \
+  --image carlosfarkas/lazyslide-histoplus \
+  --tag latest \
+  --install-github-cli
+
+# If Docker was newly installed and your user was added to the Docker group:
+newgrp docker
+
+# Verify Docker and GPU driver state.
+docker run hello-world
+./setup_server.sh --check-only
+nvidia-smi
+
+# If GPU containers fail, configure NVIDIA Container Toolkit runtime:
+sudo nvidia-ctk runtime configure --runtime=docker
+sudo systemctl restart docker
+
+################################################################################
+# 4. Build CPU and GPU Docker image variants
+################################################################################
+
+cd /media/server/STORAGE/Motic_AnatomiaPatológica_2025/lazyslide-histoplus-nextflow
+
+# Clean only Docker build cache if you are retrying after the old failed image build.
+docker builder prune -f
+
+./setup_server.sh \
+  --build \
+  --flavor both \
+  --image carlosfarkas/lazyslide-histoplus \
+  --tag latest
+
+# Check expected local tags.
+docker image ls carlosfarkas/lazyslide-histoplus
+
+# Expected tags:
+#   carlosfarkas/lazyslide-histoplus:latest
+#   carlosfarkas/lazyslide-histoplus:latest-gpu
+#   carlosfarkas/lazyslide-histoplus:latest-cpu
+
+################################################################################
+# 5. Push Docker image variants to Docker Hub
+################################################################################
+
+cd /media/server/STORAGE/Motic_AnatomiaPatológica_2025/lazyslide-histoplus-nextflow
+
+# Enter Docker Hub credentials interactively. Do not paste passwords/tokens into scripts.
+docker login
+
+./setup_server.sh \
+  --build \
+  --flavor both \
+  --image carlosfarkas/lazyslide-histoplus \
+  --tag latest \
+  --push
+
+# Verify remote pull.
+docker pull carlosfarkas/lazyslide-histoplus:latest
+docker image inspect carlosfarkas/lazyslide-histoplus:latest >/dev/null && echo OK
+
+################################################################################
+# 6. Push the GitHub repository over HTTPS with GitHub CLI
+################################################################################
+
+cd /media/server/STORAGE/Motic_AnatomiaPatológica_2025/lazyslide-histoplus-nextflow
+
+./setup_server.sh --install --no-build --install-github-cli
+find . -type d -name '__pycache__' -prune -exec rm -rf {} +
+
+# First login if needed. On a headless server, gh will print a one-time code.
+gh auth status --hostname github.com || GH_BROWSER=echo BROWSER=echo gh auth login \
+  --hostname github.com \
+  --git-protocol https \
+  --web
+
+./github_push.sh \
+  --owner cfarkas \
+  --repo-name lazyslide-histoplus-nextflow \
+  --public \
+  --git-name cfarkas \
+  --git-email carlosfarkas@gmail.com \
+  --message "Add LazySlide HistoPLUS Nextflow Docker pipeline"
+
+################################################################################
+# 7. Scan ARACELLY folder only
+################################################################################
+
+cd /media/server/STORAGE/Motic_AnatomiaPatológica_2025/lazyslide-histoplus-nextflow
+
+export HF_TOKEN="$(tr -d '\r\n' < ~/.config/lazyslide-histoplus/hf_token)"
+export HF_HOME="$HOME/.cache/lazyslide-histoplus/hf"
+export HUGGINGFACE_HUB_CACHE="$HF_HOME/hub"
+mkdir -p "$HF_HOME" "$HUGGINGFACE_HUB_CACHE"
+
+./run.sh \
+  --input-dir /media/server/STORAGE/Motic_AnatomiaPatológica_2025/PROYECTO_SUC250067_ARACELLY \
+  --output-root /media/server/STORAGE/Motic_AnatomiaPatológica_2025/PROYECTO_SUC250067_ARACELLY/AI_RESULTS_LAZY_HISTOPLUS \
+  --scan-only \
+  --profile auto \
+  --include '*' \
+  --mpp 0.5 \
+  --tile-px 840 \
+  --device cuda \
+  --celltypes-batch-size 2 \
+  --cells-batch-size 4 \
+  --num-workers 0 \
+  --cpus 8 \
+  --memory '32 GB' \
+  --time 72h \
+  --convert-to-pyramidal true \
+  --pyramidal-compression lzw \
+  --pyramidal-jpeg-q 90 \
+  --resume true \
+  --overwrite false \
+  --overwrite-export false \
+  --dry-run false \
+  --auto-export-missing true \
+  --no-progress false \
+  --structure-max-depth 5 \
+  --export-qupath false \
+  --qc-patch-count 0 \
+  --qc-patch-size 1024 \
+  --run-cells-stage false \
+  --amp false \
+  --log-level INFO \
+  --same-env-only true \
+  --process-debug true
+
+################################################################################
+# 8. Full ARACELLY run
+################################################################################
+
+cd /media/server/STORAGE/Motic_AnatomiaPatológica_2025/lazyslide-histoplus-nextflow
+
+export HF_TOKEN="$(tr -d '\r\n' < ~/.config/lazyslide-histoplus/hf_token)"
+export HF_HOME="$HOME/.cache/lazyslide-histoplus/hf"
+export HUGGINGFACE_HUB_CACHE="$HF_HOME/hub"
+mkdir -p "$HF_HOME" "$HUGGINGFACE_HUB_CACHE"
+
+./run.sh \
+  --input-dir /media/server/STORAGE/Motic_AnatomiaPatológica_2025/PROYECTO_SUC250067_ARACELLY \
+  --output-root /media/server/STORAGE/Motic_AnatomiaPatológica_2025/PROYECTO_SUC250067_ARACELLY/AI_RESULTS_LAZY_HISTOPLUS \
+  --profile auto \
+  --include '*' \
+  --mpp 0.5 \
+  --tile-px 840 \
+  --device cuda \
+  --celltypes-batch-size 2 \
+  --cells-batch-size 4 \
+  --num-workers 0 \
+  --cpus 8 \
+  --memory '32 GB' \
+  --time 72h \
+  --convert-to-pyramidal true \
+  --pyramidal-compression lzw \
+  --pyramidal-jpeg-q 90 \
+  --resume true \
+  --overwrite false \
+  --overwrite-export false \
+  --dry-run false \
+  --auto-export-missing true \
+  --no-progress false \
+  --structure-max-depth 5 \
+  --export-qupath true \
+  --qc-patch-count 12 \
+  --qc-patch-size 1024 \
+  --run-cells-stage true \
+  --amp false \
+  --log-level INFO \
+  --same-env-only true \
+  --process-debug true
+
+################################################################################
+# 9. Full run on Lymphomas export root
+################################################################################
+
+cd /media/server/STORAGE/Motic_AnatomiaPatológica_2025/lazyslide-histoplus-nextflow
+
+export HF_TOKEN="$(tr -d '\r\n' < ~/.config/lazyslide-histoplus/hf_token)"
+
+./run.sh \
+  --export-root /media/server/STORAGE/Motic_AnatomiaPatológica_2025/Linfomas_2024_EXPORT_L0_L3 \
+  --output-root /media/server/STORAGE/Motic_AnatomiaPatológica_2025/AI_RESULTS_LAZY_HISTOPLUS \
+  --profile auto \
+  --include '*HE*' \
+  --mpp 0.5 \
+  --tile-px 840 \
+  --device cuda \
+  --convert-to-pyramidal true \
+  --pyramidal-compression lzw \
+  --resume true \
+  --run-cells-stage true
+
+################################################################################
+# 10. Full run on Breast Cancer export root
+################################################################################
+
+cd /media/server/STORAGE/Motic_AnatomiaPatológica_2025/lazyslide-histoplus-nextflow
+
+export HF_TOKEN="$(tr -d '\r\n' < ~/.config/lazyslide-histoplus/hf_token)"
+
+./run.sh \
+  --export-root /media/server/STORAGE/Motic_AnatomiaPatológica_2025/PROYECTO_SUC250067_ARACELLY/BreastCancer_EXPORT_L0_L3 \
+  --output-root /media/server/STORAGE/Motic_AnatomiaPatológica_2025/PROYECTO_SUC250067_ARACELLY/AI_RESULTS_LAZY_HISTOPLUS \
+  --profile auto \
+  --include '*' \
+  --mpp 0.5 \
+  --tile-px 840 \
+  --device cuda \
+  --convert-to-pyramidal true \
+  --pyramidal-compression lzw \
+  --resume true \
+  --run-cells-stage true

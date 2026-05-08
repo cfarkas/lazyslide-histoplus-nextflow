@@ -1,0 +1,16 @@
+.nextflow*
+work/
+results/
+AI_RESULTS_LAZY_HISTOPLUS/
+nextflow_report*.html
+nextflow_trace*.txt
+nextflow_timeline*.html
+nextflow_dag*.html
+__pycache__/
+*.pyc
+*.pyo
+.DS_Store
+.env
+hf_token
+*token*
+*.log
